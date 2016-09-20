@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h> /* size_t */
+
 typedef enum {
     LEPT_UNKNOWN,
     LEPT_NULL,
@@ -34,7 +36,7 @@ STRUCT(lept_value) {
 };
 
 STRUCT(lept_string) {
-    unsigned long len;
+    size_t len;
     char* str;
 };
 
@@ -44,7 +46,7 @@ STRUCT(lept_array_item) {
 };
 
 STRUCT(lept_array) {
-    unsigned long len;
+    size_t len;
     lept_array_item* items;
 };
 
@@ -55,7 +57,7 @@ STRUCT(lept_object_node) {
 };
 
 STRUCT(lept_object) {
-    unsigned long len;
+    size_t len;
     lept_object_node* nodes;
 };
 

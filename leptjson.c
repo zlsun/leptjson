@@ -1,15 +1,19 @@
 #include "leptjson.h"
 
-#include <assert.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <math.h>
+#include <assert.h> /* assert() */
+#include <errno.h>  /* errno, ERANGE */
+#include <math.h>   /* HUGE_VAL */
+#include <stdlib.h> /* NULL, strtod() */
+#include <stdio.h>  /* f****() */
+#include <string.h> /* strlen(), strncmp() */
+
+#define NEW(type) ((type*)malloc(sizeof(type)))
+#define NEWN(n, type) ((type*)malloc(n * sizeof(type)))
 
 #define CUR() (*c->json)
 #define NEXT() do { ++c->json; } while (0)
 #define IS(ch) (CUR() == (ch))
-#define C2I(ch) \
+#define C2I(ch)                     \
     ((ch) > 'a' ? (ch) - 'a' + 10 : \
      (ch) > 'A' ? (ch) - 'A' + 10 : \
      (ch) - '0')
@@ -17,10 +21,10 @@
 #define ISDIGIT(ch)     ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch) ((ch) >= '1' && (ch) <= '9')
 
-#define EXPECT(ch) \
-    do { \
+#define EXPECT(ch)             \
+    do {                       \
         assert(CUR() == (ch)); \
-        NEXT(); \
+        NEXT();                \
     } while (0)
 
 typedef struct lept_context_s {
@@ -28,14 +32,14 @@ typedef struct lept_context_s {
 } lept_context;
 
 static int _parse_whitespace(lept_context* c) {
-    while (IS(' ') || IS('\t') || IS('\r') || IS('\n')) {
+    while (IS(' ') || IS('\t') || IS('\n') || IS('\r')) {
         NEXT();
     }
     return LEPT_PARSE_OK;
 }
 
-static int _parse_literal(lept_context* c, lept_value* v, const char* literal, int type) {
-    int len = strlen(literal);
+static int _parse_literal(lept_context* c, lept_value* v, const char* literal, lept_type type) {
+    size_t len = strlen(literal);
     if (strncmp(c->json, literal, len) != 0) {
         return LEPT_PARSE_INVALID_VALUE;
     }
@@ -44,134 +48,51 @@ static int _parse_literal(lept_context* c, lept_value* v, const char* literal, i
     return LEPT_PARSE_OK;
 }
 
-enum {
-    BEGIN = 0,
-    INTEGER, IN_INTEGER,
-    FRACTION, IN_FRACTION,
-    EXPONENT, IN_EXPONENT,
-    END, INVALID
-};
-
-#define STATE_MACHINE(begin) \
-    for (int __state = begin;;) \
-        __state_switch: \
-        switch (__state)
-#define STATE(st) break; case st:
-#define DEFAULT() default:
-#define GOTO(st) \
-    do { \
-        __state = st; \
-        goto __state_switch; \
-    } while (0)
-
 static const char* _validate_number(const char* str) {
     const char* p = str;
-    STATE_MACHINE(BEGIN) {
-        DEFAULT() {
-            assert(0); /* should never reach */
-        }
-        STATE(BEGIN) {
-            if (*p == '-') ++p;
-            if (!ISDIGIT(*p)) GOTO(INVALID);
-            else GOTO(INTEGER);
-        }
-        STATE(INTEGER) {
-            if (*p == '0') {
-                ++p;
-                GOTO(FRACTION);
-            } else if (ISDIGIT1TO9(*p)) {
-                ++p;
-                GOTO(IN_INTEGER);
-            } else {
-                GOTO(INVALID);
-            }
-        }
-        STATE(IN_INTEGER) {
-            while (ISDIGIT(*p)) {
-                ++p;
-            }
-            GOTO(FRACTION);
-        }
-        STATE(FRACTION) {
-            if (*p == '.') {
-                ++p;
-                GOTO(IN_FRACTION);
-            } else {
-                GOTO(EXPONENT);
-            }
-        }
-        STATE(IN_FRACTION) {
-            if (!ISDIGIT(*p)) {
-                GOTO(INVALID);
-            } else {
-                do {
-                    ++p;
-                } while (ISDIGIT(*p));
-                GOTO(EXPONENT);
-            }
-        }
-        STATE(EXPONENT) {
-            if (*p != 'e' && *p != 'E') {
-                GOTO(END);
-            } else {
-                ++p;
-                if (*p == '+' || *p == '-') {
-                    ++p;
-                }
-                GOTO(IN_EXPONENT);
-            }
-        }
-        STATE(IN_EXPONENT) {
-            if (!ISDIGIT(*p)) {
-                GOTO(INVALID);
-            } else {
-                do {
-                    ++p;
-                } while (ISDIGIT(*p));
-                GOTO(END);
-            }
-        }
-        STATE(END) {
-            return p;
-        }
-        STATE(INVALID) {
-            return str;
-        }
+    if (*p == '-') ++p;
+    if (*p == '0') {
+        ++p;
+    } else if (ISDIGIT1TO9(*p)) {
+        for (++p; ISDIGIT(*p); ++p);
+    } else {
+        goto invalid;
     }
+    if (*p == '.') {
+        ++p;
+        if (!ISDIGIT(*p)) goto invalid;
+        for (++p; ISDIGIT(*p); ++p);
+    }
+    if (*p == 'e' || *p == 'E') {
+        ++p;
+        if (*p == '+' || *p == '-') {
+            ++p;
+        }
+        if (!ISDIGIT(*p)) goto invalid;
+        for (++p; ISDIGIT(*p); ++p);
+    }
+    return p;
+invalid:
+    return str;
 }
 
 static int _parse_number(lept_context* c, lept_value* v) {
-    const char* vend;
-    char* end;
-    char* tmp;
-    int len;
-
-    if ((vend = _validate_number(c->json)) == c->json) {
+    const char* end;
+    if ((end = _validate_number(c->json)) == c->json) {
         return LEPT_PARSE_INVALID_VALUE;
     }
-
-    len = vend - c->json;
-    tmp = malloc((len + 1) * sizeof(char));
-    memcpy(tmp, c->json, len);
-    tmp[len] = '\0';
-
-    v->value.n = strtod(tmp, &end);
-    assert(end != tmp); /* should be valid */
-    assert(*end == '\0'); /* should process to end of tmp */
-
-    free(tmp);
-
-    if (v->value.n == HUGE_VAL || v->value.n == -HUGE_VAL) {
+    errno = 0;
+    v->value.n = strtod(c->json, NULL);
+    if (errno == ERANGE && v->value.n == HUGE_VAL) {
         return LEPT_PARSE_NUMBER_TOO_BIG;
     }
-
-    c->json = vend;
+    c->json = end;
     v->type = LEPT_NUMBER;
     return LEPT_PARSE_OK;
 }
 
 static int _parse_str(lept_context* c, lept_string* str) {
-    char* buffer = malloc(1024 * sizeof(char));
+    char* buffer = NEWN(1024, char);
     char* p = buffer;
     int ret;
     EXPECT('"');
@@ -219,7 +140,7 @@ fail:
 static int _parse_string(lept_context* c, lept_value* v) {
     lept_string* str;
     int ret;
-    str = malloc(sizeof(lept_string));
+    str = NEW(lept_string);
     if ((ret = _parse_str(c, str)) != LEPT_PARSE_OK) {
         free(str);
         return ret;
@@ -237,7 +158,7 @@ static int _parse_array(lept_context* c, lept_value* v) {
     lept_array_item* previous = NULL;
     lept_array_item* item = NULL;
     lept_value* value;
-    unsigned long len = 0;
+    size_t len = 0;
     int ret;
     EXPECT('[');
     for (;;) {
@@ -246,13 +167,13 @@ static int _parse_array(lept_context* c, lept_value* v) {
             NEXT();
             goto success;
         }
-        value = malloc(sizeof(lept_value));
+        value = NEW(lept_value);
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
             free(value);
             goto fail;
         }
         ++len;
-        item = malloc(sizeof(lept_array_item));
+        item = NEW(lept_array_item);
         item->next = NULL;
         item->value = value;
         if (head == NULL) { /* item is first item */
@@ -274,7 +195,7 @@ static int _parse_array(lept_context* c, lept_value* v) {
         }
     }
 success:
-    a = malloc(sizeof(lept_array));
+    a = NEW(lept_array);
     a->len = len;
     a->items = head;
     v->value.a = a;
@@ -297,7 +218,7 @@ static int _parse_object(lept_context* c, lept_value* v) {
     lept_object_node* node = NULL;
     lept_string* key;
     lept_value* value;
-    unsigned long len = 0;
+    size_t len = 0;
     int ret;
     EXPECT('{');
     for (;;) {
@@ -310,7 +231,7 @@ static int _parse_object(lept_context* c, lept_value* v) {
             ret = LEPT_PARSE_INVALID_VALUE;
             goto fail;
         }
-        key = malloc(sizeof(lept_string));
+        key = NEW(lept_string);
         if ((ret = _parse_str(c, key)) != LEPT_PARSE_OK) {
             free(key);
             goto fail;
@@ -323,13 +244,13 @@ static int _parse_object(lept_context* c, lept_value* v) {
         }
         NEXT();
         _parse_whitespace(c);
-        value = malloc(sizeof(lept_value));
+        value = NEW(lept_value);
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
             free(value);
             goto fail;
         }
         ++len;
-        node = malloc(sizeof(lept_object_node));
+        node = NEW(lept_object_node);
         node->next = NULL;
         node->key = key;
         node->value = value;
@@ -352,7 +273,7 @@ static int _parse_object(lept_context* c, lept_value* v) {
         }
     }
 success:
-    o = malloc(sizeof(lept_array));
+    o = NEW(lept_object);
     o->len = len;
     o->nodes = head;
     v->value.o = o;
@@ -424,8 +345,9 @@ int lept_parse_file(lept_value* v, const char* path) {
     fseek(file, 0, SEEK_END);
     file_size = ftell(file);
     rewind(file);
-    buffer = malloc(sizeof(char) * file_size);
+    buffer = NEWN(file_size + 1, char);
     result = fread(buffer, 1, file_size, file);
+    buffer[file_size] = '\0';
     if (result != file_size) {
         ret = LEPT_FILE_READ_ERROR;
         goto cleanup;
