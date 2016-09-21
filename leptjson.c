@@ -3,7 +3,7 @@
 #include <assert.h> /* assert() */
 #include <errno.h>  /* errno, ERANGE */
 #include <math.h>   /* HUGE_VAL */
-#include <stdlib.h> /* NULL, strtod() */
+#include <stdlib.h> /* NULL, strtod(), malloc() */
 #include <stdio.h>  /* f****() */
 #include <string.h> /* strlen(), strncmp() */
 
@@ -141,8 +141,9 @@ static int _parse_string(lept_context* c, lept_value* v) {
     lept_string* str;
     int ret;
     str = NEW(lept_string);
+    str->str = NULL;
     if ((ret = _parse_str(c, str)) != LEPT_PARSE_OK) {
-        free(str);
+        lept_free_string(str);
         return ret;
     }
     v->value.s = str;
@@ -168,8 +169,9 @@ static int _parse_array(lept_context* c, lept_value* v) {
             goto success;
         }
         value = NEW(lept_value);
+        value->type = LEPT_UNKNOWN;
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
-            free(value);
+            lept_free_value(value);
             goto fail;
         }
         ++len;
@@ -204,8 +206,7 @@ success:
 fail:
     while (head) {
         item = head->next;
-        free(head->value);
-        free(head);
+        lept_free_array_item(head);
         head = item;
     }
     return ret;
@@ -232,21 +233,24 @@ static int _parse_object(lept_context* c, lept_value* v) {
             goto fail;
         }
         key = NEW(lept_string);
+        key->str = NULL;
         if ((ret = _parse_str(c, key)) != LEPT_PARSE_OK) {
-            free(key);
+            lept_free_string(key);
             goto fail;
         }
         _parse_whitespace(c);
         if (CUR() != ':') {
-            free(key);
+            lept_free_string(key);
             ret = LEPT_PARSE_EXPECT_VALUE;
             goto fail;
         }
         NEXT();
         _parse_whitespace(c);
         value = NEW(lept_value);
+        value->type = LEPT_UNKNOWN;
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
-            free(value);
+            lept_free_string(key);
+            lept_free_value(value);
             goto fail;
         }
         ++len;
@@ -282,9 +286,7 @@ success:
 fail:
     while (head) {
         node = head->next;
-        free(head->key);
-        free(head->value);
-        free(head);
+        lept_free_object_node(head);
         head = node;
     }
     return ret;
@@ -326,14 +328,68 @@ int lept_parse(lept_value* v, const char* json) {
     if ((ret = _parse_value(&c, v)) == LEPT_PARSE_OK) {
         _parse_whitespace(&c);
         if (*c.json != '\0') {
-            v->type = LEPT_UNKNOWN;
             ret = LEPT_PARSE_ROOT_NOT_SINGULAR;
         }
     }
     return ret;
 }
 
-#define BUFFER_SIZE 1024
+void lept_free_string(lept_string* s) {
+    assert(s != NULL);
+    free(s->str);
+    free(s);
+}
+
+void lept_free_array_item(lept_array_item* i) {
+    assert(i != NULL);
+    lept_free_value(i->value);
+    free(i);
+}
+
+void lept_free_array(lept_array* a) {
+    lept_array_item* item;
+    lept_array_item* next;
+    assert(a != NULL);
+    for (item = a->items; item; item = next) {
+        next = item->next;
+        lept_free_array_item(item);
+    }
+    free(a);
+}
+
+void lept_free_object_node(lept_object_node* n) {
+    assert(n != NULL);
+    lept_free_string(n->key);
+    lept_free_value(n->value);
+    free(n);
+}
+
+void lept_free_object(lept_object* o) {
+    lept_object_node* node;
+    lept_object_node* next;
+    assert(o != NULL);
+    for (node = o->nodes; node; node = next) {
+        next = node->next;
+        lept_free_object_node(node);
+    }
+    free(o);
+}
+
+void lept_free_value_on_stack(lept_value* v) {
+    assert(v != NULL);
+    switch (v->type) {
+        case LEPT_STRING: lept_free_string(v->value.s); break;
+        case LEPT_ARRAY : lept_free_array(v->value.a);  break;
+        case LEPT_OBJECT: lept_free_object(v->value.o); break;
+        default: break;
+    }
+}
+
+void lept_free_value(lept_value* v) {
+    assert(v != NULL);
+    lept_free_value_on_stack(v);
+    free(v);
+}
 
 int lept_parse_file(lept_value* v, const char* path) {
     char* buffer;

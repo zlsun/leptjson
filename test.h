@@ -1,8 +1,12 @@
 #pragma once
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
+#include <stdlib.h> /* malloc() */
+#include <stdio.h>  /* printf(), fprintf() */
+#include <string.h> /* strcmp() */
+#include <math.h>   /* fabs() */
+
+#define NEW(type) ((type*)malloc(sizeof(type)))
+#define NEWN(n, type) ((type*)malloc(n * sizeof(type)))
 
 static int suite_count = 0;
 static int suite_pass = 0;
@@ -47,7 +51,7 @@ static int expect_pass = 0;
     EXPECT_EQ_BASE((expect) == (actual), expect, actual, "%lu")
 
 #define EXPECT_EQ_DOUBLE(expect, actual) \
-    EXPECT_EQ_BASE(abs((expect) - (actual)) < 1e-18, expect, actual, "%.17g")
+    EXPECT_EQ_BASE(fabs((expect) - (actual)) < 1e-18, expect, actual, "%.17g")
 
 #define EXPECT_EQ_STRING(expect, actual) \
     EXPECT_EQ_BASE(strcmp(expect, actual) == 0, expect, actual, "\"%s\"")

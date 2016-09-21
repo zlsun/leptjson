@@ -7,6 +7,7 @@ TEST(simple, null) {
     v.type = LEPT_UNKNOWN;
     EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "null"));
     EXPECT_EQ_INT(LEPT_NULL, lept_get_type(&v));
+    lept_free_value_on_stack(&v);
 }
 
 TEST(simple, true) {
@@ -14,6 +15,7 @@ TEST(simple, true) {
     v.type = LEPT_UNKNOWN;
     EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "true"));
     EXPECT_EQ_INT(LEPT_TRUE, lept_get_type(&v));
+    lept_free_value_on_stack(&v);
 }
 
 TEST(simple, false) {
@@ -21,14 +23,17 @@ TEST(simple, false) {
     v.type = LEPT_UNKNOWN;
     EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "false"));
     EXPECT_EQ_INT(LEPT_FALSE, lept_get_type(&v));
+    lept_free_value_on_stack(&v);
 }
 
 #define TEST_NUMBER(json, expect)                           \
     do {                                                    \
         lept_value v;                                       \
+        v.type = LEPT_UNKNOWN;                              \
         EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, json)); \
         EXPECT_EQ_INT(LEPT_NUMBER, lept_get_type(&v));      \
         EXPECT_EQ_DOUBLE(expect, lept_get_number(&v));      \
+        lept_free_value_on_stack(&v);                       \
     } while (0)
 
 TEST(simple, number) {
@@ -67,11 +72,13 @@ TEST(simple, number) {
     do {                                                    \
         lept_value v;                                       \
         lept_string* s;                                     \
+        v.type = LEPT_UNKNOWN;                              \
         EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, json)); \
         EXPECT_EQ_INT(LEPT_STRING, lept_get_type(&v));      \
         s = lept_get_string(&v);                            \
         EXPECT_EQ_ULONG(strlen(expect), s->len);            \
         EXPECT_EQ_STRING(expect, s->str);                   \
+        lept_free_value_on_stack(&v);                       \
     } while (0)
 
 TEST(simple, string) {
@@ -93,12 +100,14 @@ TEST(simple, string) {
         lept_value v;                                           \
         lept_array* a;                                          \
         lept_array_item* i;                                     \
+        v.type = LEPT_UNKNOWN;                                  \
         EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, json));     \
         EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));           \
         a = lept_get_array(&v);                                 \
         for (i = a->items; i != NULL; i = i->next) {            \
             EXPECT_EQ_DOUBLE(lept_get_number(i->value), *p++);  \
         }                                                       \
+        lept_free_value_on_stack(&v);                           \
     } while (0)
 
 TEST(simple, array) {
@@ -116,6 +125,7 @@ TEST(simple, array) {
         lept_value v;                                           \
         lept_object* o;                                         \
         lept_object_node* n;                                    \
+        v.type = LEPT_UNKNOWN;                                  \
         EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, json));     \
         EXPECT_EQ_INT(LEPT_OBJECT, lept_get_type(&v));          \
         o = lept_get_object(&v);                                \
@@ -123,6 +133,7 @@ TEST(simple, array) {
             EXPECT_EQ_CHAR(n->key->str[0], *k++);               \
             EXPECT_EQ_DOUBLE(lept_get_number(n->value), *p++);  \
         }                                                       \
+        lept_free_value_on_stack(&v);                           \
     } while (0)
 
 TEST(simple, object) {
@@ -134,8 +145,9 @@ TEST(simple, object) {
 #define TEST_ERROR(error, json)                         \
     do {                                                \
         lept_value v;                                   \
+        v.type = LEPT_UNKNOWN;                          \
         EXPECT_EQ_INT(error, lept_parse(&v, json));     \
-        EXPECT_EQ_INT(LEPT_UNKNOWN, lept_get_type(&v)); \
+        lept_free_value_on_stack(&v);                   \
     } while (0)
 
 TEST(error, expect_value) {
@@ -243,11 +255,14 @@ TEST(complex, mix) {
     "    ]"
     "  }"
     "}";
-    lept_value* v = malloc(sizeof(lept_value));
+    lept_value* value = NEW(lept_value);
+    lept_value* v = value;
     lept_object* o;
     lept_object_node* n;
     lept_array* a;
     lept_array_item* i;
+
+    v->type = LEPT_UNKNOWN;
 
     EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(v, json));
 
@@ -266,13 +281,15 @@ TEST(complex, mix) {
         }
     }
 
-    free(v);
+    lept_free_value(value);
 }
 
 #define TEST_FILE(expect, file)                             \
     do {                                                    \
         lept_value v;                                       \
+        v.type = LEPT_UNKNOWN;                              \
         EXPECT_EQ_INT(expect, lept_parse_file(&v, file));   \
+        lept_free_value_on_stack(&v);                       \
     } while (0)
 
 TEST(file, ok) {
