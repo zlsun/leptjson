@@ -16,7 +16,7 @@
 #define C2I(ch)                     \
     ((ch) > 'a' ? (ch) - 'a' + 10 : \
      (ch) > 'A' ? (ch) - 'A' + 10 : \
-     (ch) - '0')
+                  (ch) - '0')
 
 #define ISDIGIT(ch)     ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch) ((ch) >= '1' && (ch) <= '9')
@@ -83,7 +83,7 @@ static int _parse_number(lept_context* c, lept_value* v) {
     }
     errno = 0;
     v->value.n = strtod(c->json, NULL);
-    if (errno == ERANGE && v->value.n == HUGE_VAL) {
+    if (errno == ERANGE && (v->value.n == HUGE_VAL || v->value.n == -HUGE_VAL)) {
         return LEPT_PARSE_NUMBER_TOO_BIG;
     }
     c->json = end;
@@ -92,11 +92,21 @@ static int _parse_number(lept_context* c, lept_value* v) {
 }
 
 static int _parse_str(lept_context* c, lept_string* str) {
-    char* buffer = NEWN(1024, char);
+    int buffer_capacity = 8;
+    char* buffer = NEWN(buffer_capacity, char);
     char* p = buffer;
+    char* new_buffer = NULL;
     int ret;
     EXPECT('"');
     for (;;) {
+        if (p - buffer == buffer_capacity) { /* reach buffer end */
+            new_buffer = NEWN(buffer_capacity * 2, char);
+            memcpy(new_buffer, buffer, buffer_capacity);
+            free(buffer);
+            p = new_buffer + (p - buffer);
+            buffer_capacity *= 2;
+            buffer = new_buffer;
+        }
         switch (CUR()) {
             case '\0':
                 ret = LEPT_PARSE_UNCLOSED_QUOTES;
@@ -129,7 +139,7 @@ static int _parse_str(lept_context* c, lept_string* str) {
     }
 success:
     *p = '\0';
-    str->len = strlen(buffer);
+    str->len = p - buffer;
     str->str = buffer;
     return LEPT_PARSE_OK;
 fail:
@@ -140,8 +150,7 @@ fail:
 static int _parse_string(lept_context* c, lept_value* v) {
     lept_string* str;
     int ret;
-    str = NEW(lept_string);
-    str->str = NULL;
+    str = lept_new_string();
     if ((ret = _parse_str(c, str)) != LEPT_PARSE_OK) {
         lept_free_string(str);
         return ret;
@@ -168,15 +177,13 @@ static int _parse_array(lept_context* c, lept_value* v) {
             NEXT();
             goto success;
         }
-        value = NEW(lept_value);
-        value->type = LEPT_UNKNOWN;
+        value = lept_new_value();
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
             lept_free_value(value);
             goto fail;
         }
         ++len;
-        item = NEW(lept_array_item);
-        item->next = NULL;
+        item = lept_new_array_item();
         item->value = value;
         if (head == NULL) { /* item is first item */
             head = item;
@@ -197,7 +204,7 @@ static int _parse_array(lept_context* c, lept_value* v) {
         }
     }
 success:
-    a = NEW(lept_array);
+    a = lept_new_array();
     a->len = len;
     a->items = head;
     v->value.a = a;
@@ -232,8 +239,7 @@ static int _parse_object(lept_context* c, lept_value* v) {
             ret = LEPT_PARSE_INVALID_VALUE;
             goto fail;
         }
-        key = NEW(lept_string);
-        key->str = NULL;
+        key = lept_new_string();
         if ((ret = _parse_str(c, key)) != LEPT_PARSE_OK) {
             lept_free_string(key);
             goto fail;
@@ -246,16 +252,14 @@ static int _parse_object(lept_context* c, lept_value* v) {
         }
         NEXT();
         _parse_whitespace(c);
-        value = NEW(lept_value);
-        value->type = LEPT_UNKNOWN;
+        value = lept_new_value();
         if ((ret = _parse_value(c, value)) != LEPT_PARSE_OK) {
             lept_free_string(key);
             lept_free_value(value);
             goto fail;
         }
         ++len;
-        node = NEW(lept_object_node);
-        node->next = NULL;
+        node = lept_new_object_node();
         node->key = key;
         node->value = value;
         if (head == NULL) { /* node is first node */
@@ -277,7 +281,7 @@ static int _parse_object(lept_context* c, lept_value* v) {
         }
     }
 success:
-    o = NEW(lept_object);
+    o = lept_new_object();
     o->len = len;
     o->nodes = head;
     v->value.o = o;
@@ -332,6 +336,48 @@ int lept_parse(lept_value* v, const char* json) {
         }
     }
     return ret;
+}
+
+lept_string* lept_new_string() {
+    lept_string* s = NEW(lept_string);
+    s->len = 0;
+    s->str = NULL;
+    return s;
+}
+
+lept_array_item* lept_new_array_item() {
+    lept_array_item* i = NEW(lept_array_item);
+    i->next = NULL;
+    i->value = NULL;
+    return i;
+}
+
+lept_array* lept_new_array() {
+    lept_array* a = NEW(lept_array);
+    a->len = 0;
+    a->items = NULL;
+    return a;
+}
+
+lept_object_node* lept_new_object_node() {
+    lept_object_node* n = NEW(lept_object_node);
+    n->next = NULL;
+    n->key = NULL;
+    n->value = NULL;
+    return n;
+}
+
+lept_object* lept_new_object() {
+    lept_object* o = NEW(lept_object);
+    o->len = 0;
+    o->nodes = NULL;
+    return o;
+}
+
+lept_value* lept_new_value() {
+    lept_value* v = NEW(lept_value);
+    v->type = LEPT_UNKNOWN;
+    return v;
 }
 
 void lept_free_string(lept_string* s) {

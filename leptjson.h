@@ -79,6 +79,13 @@ enum {
 int lept_parse(lept_value* v, const char* json);
 int lept_parse_file(lept_value* v, const char* path);
 
+lept_string* lept_new_string();
+lept_array_item* lept_new_array_item();
+lept_array* lept_new_array();
+lept_object_node* lept_new_object_node();
+lept_object* lept_new_object();
+lept_value* lept_new_value();
+
 void lept_free_string(lept_string* s);
 void lept_free_array_item(lept_array_item* i);
 void lept_free_array(lept_array* a);
